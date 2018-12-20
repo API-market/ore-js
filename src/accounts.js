@@ -12,7 +12,7 @@ function newAccountTransaction(name, ownerPublicKey, activePublicKey, orePayerAc
     permission: 'active',
     stakedCpu: '0.1000',
     stakedNet: '0.1000',
-    tokenSymbol: this.chainName === 'ore' ? 'SYS' : 'EOS',
+    tokenSymbol: this.config.chainName === 'ore' ? 'SYS' : 'EOS',
     transfer: false,
     ...options
   };
@@ -293,7 +293,7 @@ async function createOreAccount(password, salt, ownerPublicKey, orePayerAccountN
 
   const returnInfo = await createAccount.bind(this)(password, salt, ownerPublicKey, orePayerAccountName, options);
 
-  if (this.chainName === 'ore') {
+  if (this.config.chainName === 'ore') {
     const verifierAuthKeys = await generateAuthKeys.bind(this)(returnInfo.oreAccountName, 'authverifier', 'token.ore', 'approve', broadcast);
 
     returnInfo.verifierAuthKey = verifierAuthKeys.privateKeys.active;

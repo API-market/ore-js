@@ -30,12 +30,14 @@ class Orejs {
   }
 
   constructEos(config) {
-    this.config = config;
-    this.chainName = config.chainName || 'ore'; // ore || eos
-    this.rpc = new eosjs.JsonRpc(config.httpEndpoint, { fetch: config.fetch || fetch });
-    this.signatureProvider = config.signatureProvider || new eosjs.JsSignatureProvider(config.privateKeys || []);
+    this.config = {
+      chainName: 'ore',
+      ...config
+    };
+    this.signatureProvider = this.config.signatureProvider || new eosjs.JsSignatureProvider(this.config.privateKeys || []);
+    this.rpc = new eosjs.JsonRpc(this.config.httpEndpoint, { fetch: this.config.fetch || fetch });
     this.eos = new eosjs.Api({
-      chainId: config.chainId,
+      chainId: this.config.chainId,
       rpc: this.rpc,
       signatureProvider: this.signatureProvider,
       textEncoder: new TextEncoder(),
@@ -44,7 +46,23 @@ class Orejs {
   }
 }
 
+// NOTE: Working with multiple http endpoints, allows our RPC calls to keep working, in the event that one endpoint goes down
+// NOTE: Call this method with multiple endpoints, to ensure RPC endpoint redundancy
+// NOTE: This will simply take the the first RPC URI that responds with a chain id from get_info
+function getFastestHttpEndpoint(httpEndpoints) {
+  return Promise.race(httpEndpoints.map(httpEndpoint => {
+    return new Promise(async (resolve, reject) => {
+      const rpc = new eosjs.JsonRpc(httpEndpoint, { fetch });
+      const info = await rpc.get_info();
+      if (info && info.chain_id) {
+        resolve({ httpEndpoint, chainId: info.chain_id });
+      }
+    });
+  }));
+}
+
 module.exports = {
   crypto,
+  getFastestHttpEndpoint,
   Orejs,
 };
