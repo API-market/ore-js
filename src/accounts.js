@@ -94,6 +94,23 @@ function generateAccountNameString(prefix = '') {
   return (prefix + timestampEosBase32() + randomEosBase32()).substr(0, 12);
 }
 
+// Generates a full set of keys, allowing for partial override
+async function generateKeys(predefinedKeys = {}) {
+  const keys = await Keygen.generateMasterKeys();
+  const { publicKeys = {}, privateKeys = {} } = predefinedKeys;
+  return {
+    ...keys,
+    publicKeys: {
+      ...keys.publicKeys,
+      ...publicKeys
+    },
+    privateKeys: {
+      ...keys.privateKeys,
+      ...privateKeys
+    }
+  };
+}
+
 function encryptKeys(keys, password, salt) {
   const { masterPrivateKey, privateKeys, publicKeys } = keys;
   const encryptedKeys = {
@@ -181,8 +198,7 @@ async function createOreAccountWithKeys(activePublicKey, ownerPublicKey, orePaye
 }
 
 async function generateOreAccountAndKeys(ownerPublicKey, orePayerAccountName, options = {}) {
-  const keys = options.keys || await Keygen.generateMasterKeys();
-
+  const keys = await generateKeys(options.keys);
   const {
     oreAccountName,
     transaction,
@@ -294,7 +310,7 @@ async function createKeyPair(password, salt, authAccountName, permissionName, op
   options = {
     confirm: true,
     parentPermission: 'active',
-    keys: await Keygen.generateMasterKeys(),
+    keys: await generateKeys(),
     ...options
   };
 
@@ -320,7 +336,7 @@ async function createBridgeAccount(password, salt, authorizingAccount, options) 
   };
 
   let transaction;
-  const keys = options.keys || await Keygen.generateMasterKeys();
+  const keys = await generateKeys(options.keys);
 
   if (options.confirm) {
     transaction = await this.awaitTransaction(() => {

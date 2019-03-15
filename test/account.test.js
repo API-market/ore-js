@@ -362,6 +362,29 @@ describe('account', () => {
         });
       });
 
+      describe('when partially defining keys', () => {
+        const key = 'EOS5vTStKDUDbLHu4hSi8iFrmaJET88HHcL5oVBYQ1wd2aeMHgHs2';
+        const options = { keys: { publicKeys: { owner: key } } }
+
+        it('returns an account with the specified key', async () => {
+          const account = await orejs.createOreAccount(WALLET_PASSWORD, USER_ACCOUNT_ENCRYPTION_SALT, ORE_OWNER_ACCOUNT_KEY, ORE_PAYER_ACCOUNT_NAME, options);
+          expect(account).toEqual(expect.objectContaining({
+            keys: expect.objectContaining({
+              publicKeys: expect.objectContaining({ owner: key })
+            }),
+          }));
+        });
+
+        it('returns an account with the non-specified key filled in', async () => {
+          const account = await orejs.createOreAccount(WALLET_PASSWORD, USER_ACCOUNT_ENCRYPTION_SALT, ORE_OWNER_ACCOUNT_KEY, ORE_PAYER_ACCOUNT_NAME, options);
+          expect(account).toEqual(expect.objectContaining({
+            keys: expect.objectContaining({
+              publicKeys: expect.objectContaining({ active: expect.stringMatching(/^EOS\w*$/) })
+            }),
+          }));
+        });
+      });
+
       describe('when defining an eos chain', () => {
         let spyTransaction;
         let transaction;
