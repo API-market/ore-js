@@ -15,6 +15,11 @@ function isNullOrEmpty(obj) {
   return (Object.keys(obj).length === 0 && obj.constructor === Object);
 }
 
+function onlyUnique(value, index, self) {
+  return self.indexOf(value) === index;
+}
+
 module.exports = {
-  isNullOrEmpty
+  isNullOrEmpty,
+  onlyUnique
 };
