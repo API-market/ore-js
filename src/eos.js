@@ -5,12 +5,6 @@ const { BLOCKS_BEHIND_REF_BLOCK, BLOCKS_TO_CHECK, CHECK_INTERVAL, GET_BLOCK_ATTE
 const { isNullOrEmpty } = require('./helpers');
 const { mapError } = require('./errors');
 
-const WaitForConfirm = {
-  Confirm_1: 1,
-  Confirm_7: 7,
-  Confirm_Final: 0
-};
-
 // NOTE: More than a simple wrapper for eos.rpc.get_info
 // NOTE: Saves state from get_info, which can be used by other methods
 // NOTE: For example, newaccount will have different field names, depending on the server_version_string
@@ -37,11 +31,16 @@ async function getChainId() {
   return chainId;
 }
 
-async function sendTransaction(func, waitForConfirm, awaitTransactionOptions) {
+async function sendTransaction(func, confirm, awaitTransactionOptions) {
   let transaction;
   let confirmationStatus;
-  if (!isNullOrEmpty(waitForConfirm)) {
-    ({ transaction, confirmationStatus } = await awaitTransaction.bind(this)(func, awaitTransactionOptions, waitForConfirm));
+  if (confirm) {
+    ({ transaction, confirmationStatus } = await awaitTransaction.bind(this)(func, awaitTransactionOptions));
+    if (confirmationStatus === 'maxBlocksTimeout') {
+      const err = new Error('Transaction is timed out');
+      err.name = confirmationStatus;
+      throw err;
+    }
   } else {
     try {
       transaction = await func();
@@ -50,7 +49,7 @@ async function sendTransaction(func, waitForConfirm, awaitTransactionOptions) {
       throw new Error(`Send Transaction Failure: ${errString}`);
     }
   }
-  return { transaction, confirmationStatus };
+  return transaction;
 }
 
 // NOTE: Use this to await for transactions to be added to a block
@@ -61,8 +60,7 @@ async function sendTransaction(func, waitForConfirm, awaitTransactionOptions) {
 // NOTE: getBlockAttempts = the number of failed attempts at retrieving a particular block, before giving up
 
 function awaitTransaction(func, options = {}) {
-  const { blocksToCheck = BLOCKS_TO_CHECK, checkInterval = CHECK_INTERVAL, getBlockAttempts = GET_BLOCK_ATTEMPTS,
-    waitForConfirm = WaitForConfirm.Confirm_1 } = options;
+  const { blocksToCheck = BLOCKS_TO_CHECK, checkInterval = CHECK_INTERVAL, getBlockAttempts = GET_BLOCK_ATTEMPTS } = options;
   let startingBlockNumToCheck;
   let blockNumToCheck;
 
@@ -98,38 +96,53 @@ function awaitTransaction(func, options = {}) {
         blockToCheck = await this.eos.rpc.get_block(blockNumToCheck);
         blockHasTransaction = await hasTransaction(blockToCheck, transaction.transaction_id);
         if (blockHasTransaction) {
-          if (waitForConfirm === WaitForConfirm.Confirm_Final) {
-            if (blockToCheck.isIrreversible) {
-              return resolveAwaitTransaction(transaction, 'confirmed', resolve, intConfirm);
-            }
-          } else if (numOfConfirm >= waitForConfirm) {
-            return resolveAwaitTransaction(transaction, 'confirmed', resolve, intConfirm);
-          }
-          numOfConfirm += 1;
+          resolveAwaitTransaction(transaction, 'confirmed', resolve, intConfirm);
+          return;
         }
+        numOfConfirm += 1;
         getBlockAttempt = 1;
         blockNumToCheck += 1;
         inProgress = false;
       } catch (error) {
         if (getBlockAttempt >= getBlockAttempts) {
           clearInterval(intConfirm);
-          return reject(new Error(`Await Transaction Failure: Failure to find a block, after ${getBlockAttempt} attempts to check block ${blockNumToCheck}.`));
+          reject(new Error(`Await Transaction Failure: Failure to find a block, after ${getBlockAttempt} attempts to check block ${blockNumToCheck}.`));
+          return;
         }
         getBlockAttempt += 1;
       }
       if (blockNumToCheck > startingBlockNumToCheck + blocksToCheck) {
-        if (hasTransaction) {
-          return resolveAwaitTransaction(transaction, 'confirmedButNotFinal', resolve, intConfirm);
+        if (blockHasTransaction) {
+          resolveAwaitTransaction(transaction, 'confirmedButNotFinal', resolve, intConfirm);
+          return;
         }
-        return resolveAwaitTransaction(transaction, 'maxBlocksTimeout', resolve, intConfirm);
+        resolveAwaitTransaction(transaction, 'maxBlocksTimeout', resolve, intConfirm);
       }
     }, checkInterval);
   });
 }
 
-function resolveAwaitTransaction(transaction, confirmationStatus, resolve, interval) {
+function resolveAwaitTransaction(transaction, confirmationStatus, interval, resolveOrReject, errorMessage = '') {
   clearInterval(interval);
-  return resolve({ transaction, confirmationStatus });
+  let error;
+  switch (confirmationStatus) {
+    case 'confirmed':
+      return resolveOrReject(transaction);
+    case 'confirmedButNotFinal':
+      error = new Error(errorMessage);
+      error.name = confirmationStatus;
+      return resolveOrReject(error);
+    case 'maxBlocksTimeout':
+      error = new Error(errorMessage);
+      error.name = confirmationStatus;
+      return resolveOrReject(error);
+    case 'maxBlockAttemptReached':
+      error = new Error(errorMessage);
+      error.name = confirmationStatus;
+      return resolveOrReject(error);
+    default:
+      return resolveOrReject(transaction);
+  }
 }
 
 async function getAllTableRows(params, key_field = 'id', json = true) {
