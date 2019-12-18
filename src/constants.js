@@ -1,5 +1,5 @@
 // sign transaction parameters
-const TRANSACTION_EXPIRY_IN_SECONDS = 30;
+const TRANSACTION_EXPIRY_IN_SECONDS = 10;
 const BLOCKS_BEHIND_REF_BLOCK = 3;
 const TRANSACTION_ENCODING = 'utf8';
 
