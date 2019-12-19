@@ -90,7 +90,7 @@ function awaitTransaction(func, options = {}) {
         blockToCheck = await this.eos.rpc.get_block(blockNumToCheck);
         blockHasTransaction = await hasTransaction(blockToCheck, transaction.transaction_id);
         if (blockHasTransaction) {
-          respondAwaitTransaction(transaction, 'confirmed', resolve, intConfirm);
+          respondAwaitTransaction(transaction, 'confirmed', intConfirm, resolve);
           return;
         }
         numOfConfirm += 1;
@@ -99,7 +99,7 @@ function awaitTransaction(func, options = {}) {
         inProgress = false;
       } catch (error) {
         if (getBlockAttempt >= getBlockAttempts) {
-          respondAwaitTransaction(transaction, 'maxBlockAttemptReached', reject, intConfirm,
+          respondAwaitTransaction(transaction, 'maxBlockAttemptReached', intConfirm, reject,
             `Await Transaction Failure: Failure to find a block, after ${getBlockAttempt} attempts to check block ${blockNumToCheck}.`);
           return;
         }
@@ -111,7 +111,7 @@ function awaitTransaction(func, options = {}) {
         //   resolveAwaitTransaction(transaction, 'confirmedButNotFinal', resolve, intConfirm);
         //   return;
         // }
-        respondAwaitTransaction(transaction, 'maxBlocksTimeout', reject, intConfirm,
+        respondAwaitTransaction(transaction, 'maxBlocksTimeout', intConfirm, reject,
           `Await Transaction Timeout: Waited for ${blocksToCheck} blocks ~(${(checkInterval / 1000) * blocksToCheck} seconds) 
           starting with block num: ${startingBlockNumToCheck}. This does not mean the transaction failed just that the transaction 
           wasn't found in a block before timeout`);
