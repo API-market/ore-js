@@ -33,14 +33,8 @@ async function getChainId() {
 
 async function sendTransaction(func, confirm, awaitTransactionOptions) {
   let transaction;
-  let confirmationStatus;
   if (confirm) {
-    ({ transaction, confirmationStatus } = await awaitTransaction.bind(this)(func, awaitTransactionOptions));
-    if (confirmationStatus === 'maxBlocksTimeout') {
-      const err = new Error('Transaction is timed out');
-      err.name = confirmationStatus;
-      throw err;
-    }
+    transaction = await awaitTransaction.bind(this)(func, awaitTransactionOptions);
   } else {
     try {
       transaction = await func();
@@ -96,7 +90,7 @@ function awaitTransaction(func, options = {}) {
         blockToCheck = await this.eos.rpc.get_block(blockNumToCheck);
         blockHasTransaction = await hasTransaction(blockToCheck, transaction.transaction_id);
         if (blockHasTransaction) {
-          resolveAwaitTransaction(transaction, 'confirmed', resolve, intConfirm);
+          respondAwaitTransaction(transaction, 'confirmed', resolve, intConfirm);
           return;
         }
         numOfConfirm += 1;
@@ -105,33 +99,38 @@ function awaitTransaction(func, options = {}) {
         inProgress = false;
       } catch (error) {
         if (getBlockAttempt >= getBlockAttempts) {
-          clearInterval(intConfirm);
-          reject(new Error(`Await Transaction Failure: Failure to find a block, after ${getBlockAttempt} attempts to check block ${blockNumToCheck}.`));
+          respondAwaitTransaction(transaction, 'maxBlockAttemptReached', reject, intConfirm,
+            `Await Transaction Failure: Failure to find a block, after ${getBlockAttempt} attempts to check block ${blockNumToCheck}.`);
           return;
         }
         getBlockAttempt += 1;
       }
       if (blockNumToCheck > startingBlockNumToCheck + blocksToCheck) {
-        if (blockHasTransaction) {
-          resolveAwaitTransaction(transaction, 'confirmedButNotFinal', resolve, intConfirm);
-          return;
-        }
-        resolveAwaitTransaction(transaction, 'maxBlocksTimeout', resolve, intConfirm);
+        // Will be added with confirmation enum
+        // if (blockHasTransaction) {
+        //   resolveAwaitTransaction(transaction, 'confirmedButNotFinal', resolve, intConfirm);
+        //   return;
+        // }
+        respondAwaitTransaction(transaction, 'maxBlocksTimeout', reject, intConfirm,
+          `Await Transaction Timeout: Waited for ${blocksToCheck} blocks ~(${(checkInterval / 1000) * blocksToCheck} seconds) 
+          starting with block num: ${startingBlockNumToCheck}. This does not mean the transaction failed just that the transaction 
+          wasn't found in a block before timeout`);
       }
     }, checkInterval);
   });
 }
 
-function resolveAwaitTransaction(transaction, confirmationStatus, interval, resolveOrReject, errorMessage = '') {
+function respondAwaitTransaction(transaction, confirmationStatus, interval, resolveOrReject, errorMessage = '') {
   clearInterval(interval);
   let error;
   switch (confirmationStatus) {
     case 'confirmed':
       return resolveOrReject(transaction);
-    case 'confirmedButNotFinal':
-      error = new Error(errorMessage);
-      error.name = confirmationStatus;
-      return resolveOrReject(error);
+    // Will be added with confirmation enum
+    // case 'confirmedButNotFinal':
+    //   error = new Error(errorMessage);
+    //   error.name = confirmationStatus;
+    //   return resolveOrReject(error);
     case 'maxBlocksTimeout':
       error = new Error(errorMessage);
       error.name = confirmationStatus;
