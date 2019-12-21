@@ -3,6 +3,7 @@ const { Serialize, RpcError } = require('eosjs');
 const ecc = require('eosjs-ecc');
 const { BLOCKS_BEHIND_REF_BLOCK, BLOCKS_TO_CHECK, CHECK_INTERVAL, GET_BLOCK_ATTEMPTS, TRANSACTION_ENCODING, TRANSACTION_EXPIRY_IN_SECONDS } = require('./constants');
 const { mapChainError } = require('./errors');
+const { isNullOrEmpty } = require('./helpers');
 // NOTE: More than a simple wrapper for eos.rpc.get_info
 // NOTE: Saves state from get_info, which can be used by other methods
 // NOTE: For example, newaccount will have different field names, depending on the server_version_string
@@ -100,7 +101,6 @@ function awaitTransaction(transactionResponse, options = {}) {
       }
       if (blockNumToCheck > startingBlockNumToCheck + blocksToCheck) {
         rejectAwaitTransaction(reject, timer, 'maxBlocksTimeout', `Await Transaction Timeout: Waited for ${blocksToCheck} blocks ~(${(checkInterval / 1000) * blocksToCheck} seconds) starting with block num: ${startingBlockNumToCheck}. This does not mean the transaction failed just that the transaction wasn't found in a block before timeout`);
-        return;
       }
     }, checkInterval);
   });
@@ -215,10 +215,70 @@ function pushSignedTransaction(signedTransaction) {
   return this.eos.pushSignedTransaction(signedTransaction);
 }
 
+async function signTransaction(transaction, transactionOptions = {}, privateKey) {
+  const serializedTrx = await serializeTransaction.bind(this)(transaction, transactionOptions);
+  const { serializeTransaction } = serializedTrx;
+  const signBuf = await createSignBuffer.bind(this)(serializeTransaction);
+  const signature = await signSerializedTransactionBuffer()(signBuf, privateKey);
+  const signedTrx = {};
+  signedTrx.signatures = [];
+  signedTrx.signatures.push(signature);
+  signedTrx.serializedTransaction = serializedTrx.serializedTransaction;
+  return signedTrx;
+}
+
+async function signAndSendTransaction(transaction, serializedTransaction, privateKeys = [], blocksBehind = null, expireSeconds = null, broadcast = true, sign = true) {
+  const trx = {};
+  let result;
+  if (isNullOrEmpty(serializedTransaction)) {
+    trx.serializedTransaction = serializedTransaction(transaction, { blocksBehind, expireSeconds, broadcast, sign });
+  } else {
+    trx.serializedTransaction = serializedTransaction;
+  }
+  if (sign) {
+    if (privateKeys.length > 0) {
+      result = await addSignatures(trx.serializedTransaction, privateKeys);
+      if (broadcast) {
+        result = pushSignedTransaction.bind(this)(trx);
+      }
+    } else {
+      throw new Error('Failure on signing transaction.');
+    }
+  } else {
+    result = trx;
+  }
+  return result;
+}
+
+async function addSignatures(serializedTransaction, privateKeys) {
+  const signatures = privateKeys.map(async (privateKey) => {
+    signSerializedTransaction(serializedTransaction, privateKey);
+  });
+  return { serializedTransaction, signatures };
+}
+
+async function signSerializedTransaction(serializedTransaction, privateKey) {
+  const buffer = await createSignBuffer.bind(this)(serializedTransaction);
+  return signSerializedTransactionBuffer(buffer, privateKey);
+}
+
+// UNFINISHED -- try to utilize checkIfAccountHasPermission
+async function hasSignatures(signedTransaction) {
+  const { serializedTransaction, signatures } = signedTransaction;
+  const transaction = deserializeTransaction.bind(this)(serializedTransaction);
+  const { actions } = transaction;
+  const auths = actions.map((action) => {
+    const { authorizations } = action;
+    return authorizations.map(authorization => authorization.actor);
+  });
+}
+
 module.exports = {
+  addSignatures,
   checkPubKeytoAccount,
   createSignBuffer,
   getAllTableRows,
+  hasSignatures,
   hasTransaction,
   hexToUint8Array: Serialize.hexToUint8Array,
   isValidPublicKey,
@@ -227,7 +287,10 @@ module.exports = {
   sendTransaction,
   serializeTransaction,
   deserializeTransaction,
+  signAndSendTransaction,
   signRawTransaction,
+  signSerializedTransaction,
+  signTransaction,
   signSerializedTransactionBuffer,
   transact
 };
